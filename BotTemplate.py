@@ -33,9 +33,4 @@ async def on_ready():
   await bot.tree.sync()
 
 
-@client.event
-async def on_reaction_add(reaction, user):
-  await reaction.message.channel.send(f'{user} signed up with {reaction.emoji}')
-
-
 bot.run(TOKEN)

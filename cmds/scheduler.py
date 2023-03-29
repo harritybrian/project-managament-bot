@@ -4,22 +4,25 @@ from discord.ext import commands
 import datetime
 import pytz
 import sqlite3
+import re
+import time
+import schedule
 
 client = discord.Client(intents=discord.Intents.all())
 
 timenow = datetime.datetime.now()
 mst_now = timenow.astimezone(pytz.timezone('America/Denver'))
+my_mst = datetime.datetime.strftime(mst_now, '%Y-%m-%d %I:%M %p')
 timezone = pytz.timezone('America/Denver')
 date_format = mst_now.strftime("%Y/%m/%d")
 hour_format = mst_now.strftime("%H:%M:%S")
-
-#async def startup():
 
 
 class Scheduler(commands.Cog, name="scheduler"):
     def __init__(self, bot):
         self.bot = bot
         bot.add_view(self.NewView(self))
+        self.check_time.start()
         print('Scheduler initialized!')
 
     db = sqlite3.connect("schedules.db")
@@ -30,6 +33,40 @@ class Scheduler(commands.Cog, name="scheduler"):
     absences = []
     tentative = []
     msg_id = ""
+
+    @discord.ext.tasks.loop(minutes=1)
+    async def check_time(self):
+        timenow = datetime.datetime.now()
+        mst_now = timenow.astimezone(pytz.timezone('America/Denver'))
+        my_mst = datetime.datetime.strftime(mst_now, '%Y-%m-%d %I:%M %p')
+
+        self.dba.execute("SELECT time FROM schedules_list")
+        data = self.dba.fetchall()
+        for x in data:
+            if x[0] < my_mst:
+                self.dba.execute("SELECT message_id FROM schedules_list WHERE time = ?", (x[0],))
+                msg_id = self.dba.fetchone()
+                msg_id = re.sub('\D', '', str(msg_id))
+                msg_id = int(msg_id)
+                print(msg_id)
+                self.dba.execute("SELECT channel_id FROM schedules_list WHERE time = ?", (x[0],))
+                channel_id = self.dba.fetchone()
+                channel_id = re.sub('\D', '', str(channel_id))
+                channel_id = int(channel_id)
+                print(channel_id)
+                channel = self.bot.get_channel(channel_id)
+                msg = await channel.fetch_message(msg_id)
+                view = self.BlankView(self)
+                await msg.edit(view=view)
+
+                self.dba.execute('DELETE FROM signups_list WHERE (message_id = ?)', (msg_id,))
+                self.dba.execute('DELETE FROM absent_list WHERE (message_id = ?)', (msg_id,))
+                self.dba.execute('DELETE FROM tentative_list WHERE (message_id = ?)',
+                                 (msg_id,))
+                self.dba.execute('DELETE FROM schedules_list WHERE (message_id = ?)',
+                                 (msg_id,))
+                self.db.commit()
+                print('Deleted past event records.')
 
     async def get_user(self, id):
         x = await self.bot.fetch_user(id)
@@ -133,22 +170,32 @@ class Scheduler(commands.Cog, name="scheduler"):
     @commands.hybrid_command(name='schedule', with_app_command=True, description="A test scheduler.",
                              brief="Brief example.", usage="Usage example.")
     @app_commands.describe(title='Enter a title for the event.', description='Enter a description for the event.',
-                           leader='Choose a user as the event leader.', role='Choose which roles can sign up for the event.',
+                           role='Choose which roles can sign up for the event.',
                            time='Enter time in the format: Y-M-D H:M AM/PM')
     async def scheduler(self, ctx, *, time: str = commands.parameter(description="Enter as Y-M-D Hour-Minute-AM/PM"),
                         title: str = commands.parameter(default="Default title.",
-                                                        description='Title of the event.', displayed_default='Displayed default'),
+                                                        description='Title of the event.',
+                                                        displayed_default='Displayed default'),
                         description: str = commands.parameter(default="Default description.",
                                                               description="Desc of the event."),
-                        leader: discord.User = None, role: discord.Role = None):
+                        role: discord.Role = None):
 
-        if role is None:
-            self.perms = ctx.guild.default_role
-        else:
-            self.perms = role
+        # if role is None:
+        # self.perms = ctx.guild.default_role
+        # else:
+        # self.perms = role
+
+        if not ctx.message.author.guild_permissions.administrator:
+            await ctx.send(content='You need to be an admin to post signups!', ephemeral=True, delete_after=5)
+            return
 
         date = datetime.datetime.strptime(time, '%Y-%m-%d %I:%M %p')
         date1 = timezone.localize(date, is_dst=None)
+        now = mst_now.strftime("%Y-%m-%d %I:%M %p")
+
+        if date1 < mst_now:
+            await ctx.send(content='That time has already passed!', ephemeral=True, delete_after=5)
+            return
 
         signup = discord.Embed(timestamp=date)
         view = self.NewView(self)
@@ -161,21 +208,18 @@ class Scheduler(commands.Cog, name="scheduler"):
         signup.add_field(name=f'\U0001F4C5 ' + date.strftime("%Y-%m-%d"), value="", inline=True)
         signup.add_field(name=f'\U0000231A ' + date.strftime("%I:%M %p"), value="", inline=True)
         signup.add_field(name="\U0001F465 Attending:", value=0, inline=True)
-       # if leader is not None:
-           # signup.add_field(name="\U0001F5E3 Leaders:", value=leader.display_name, inline=True)
-        #else:
-            #signup.add_field(name="\U0001F5E3 Leaders:", value="None", inline=True)
         signup.add_field(name="✅Signups:", value="", inline=True)
         signup.add_field(name="❌Absences:", value="", inline=True)
         signup.add_field(name="⚖Tentative:", value="", inline=True)
         embed = await ctx.send(embed=signup, view=view)
         self.msg_id = embed.id
-        self.dba.execute('INSERT INTO schedules_list(message_id, time) VALUES(?, ?)', (str(self.msg_id), time))
+        self.dba.execute('INSERT INTO schedules_list(message_id, time, channel_id) VALUES(?, ?, ?)',
+                         (self.msg_id, date1, ctx.message.channel.id))
         print('Initial insert')
         self.db.commit()
 
         guild = ctx.guild
-        #await discord.Guild.create_scheduled_event(guild, name=title, start_time=date1,
+        # await discord.Guild.create_scheduled_event(guild, name=title, start_time=date1,
         #                                           description=description, channel=ctx.guild.voice_channels[0],)
 
     class BlankView(discord.ui.View):
@@ -183,7 +227,8 @@ class Scheduler(commands.Cog, name="scheduler"):
             super().__init__(timeout=None)
             self.scheduler = scheduler
 
-        @discord.ui.button(label="The event has already passed.", style=discord.ButtonStyle.secondary, custom_id='blank',
+        @discord.ui.button(label="The event has already passed.", style=discord.ButtonStyle.secondary,
+                           custom_id='blank',
                            disabled=True)
         async def blank_button(self):
             return
@@ -196,13 +241,12 @@ class Scheduler(commands.Cog, name="scheduler"):
         @discord.ui.button(label="Sign up", row=0, style=discord.ButtonStyle.secondary, custom_id='persistent_view_1',
                            emoji="✅")
         async def button_signup(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-            #if not await self.scheduler.check_role(interaction):
-                #return
+            # if not await self.scheduler.check_role(interaction):
+            # return
 
             await self.scheduler.swap(1, interaction)
 
-            #self.scheduler.signups.append(interaction.user)
+            # self.scheduler.signups.append(interaction.user)
 
             await interaction.message.edit(embed=await self.scheduler.update_embed(interaction.message.embeds[0],
                                                                                    interaction))
@@ -211,12 +255,11 @@ class Scheduler(commands.Cog, name="scheduler"):
         @discord.ui.button(label="Absent", row=0, style=discord.ButtonStyle.secondary, custom_id='persistent_view_2',
                            emoji="❌")
         async def button_absent(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-            #if not await self.scheduler.check_role(interaction):
-                #return
+            # if not await self.scheduler.check_role(interaction):
+            # return
             await self.scheduler.swap(2, interaction)
 
-            #self.scheduler.absences.append(interaction.user)
+            # self.scheduler.absences.append(interaction.user)
 
             await interaction.message.edit(embed=await self.scheduler.update_embed(interaction.message.embeds[0],
                                                                                    interaction))
@@ -225,12 +268,11 @@ class Scheduler(commands.Cog, name="scheduler"):
         @discord.ui.button(label="Tentative", row=0, style=discord.ButtonStyle.secondary, custom_id='persistent_view_3',
                            emoji="⚖")
         async def button_tentative(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-            #if not await self.scheduler.check_role(interaction):
-               #return
+            # if not await self.scheduler.check_role(interaction):
+            # return
             await self.scheduler.swap(3, interaction)
 
-            #self.scheduler.tentative.append(interaction.user)
+            # self.scheduler.tentative.append(interaction.user)
 
             await interaction.message.edit(embed=await self.scheduler.update_embed(interaction.message.embeds[0],
                                                                                    interaction))
@@ -239,9 +281,8 @@ class Scheduler(commands.Cog, name="scheduler"):
         @discord.ui.button(label="Remove Sign Up", row=1, style=discord.ButtonStyle.danger,
                            custom_id='persistent_view_4')
         async def button_remove(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-            #if not await self.scheduler.check_role(interaction):
-                #return
+            # if not await self.scheduler.check_role(interaction):
+            # return
             # self.scheduler.swap(0, interaction.user)
 
             self.scheduler.dba.execute('DELETE FROM signups_list WHERE (message_id = ? AND user_id = ?)',
@@ -259,14 +300,13 @@ class Scheduler(commands.Cog, name="scheduler"):
         @discord.ui.button(label="Delete Event", row=1, style=discord.ButtonStyle.danger,
                            custom_id='persistent_view_5')
         async def button_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
-
             if not interaction.message.author.guild_permissions.administrator:
                 return
 
-            self.scheduler.dba.execute('DELETE FROM signups_list WHERE (message_id = ?)', (interaction.message.id, ))
-            self.scheduler.dba.execute('DELETE FROM absent_list WHERE (message_id = ?)', (interaction.message.id, ))
-            self.scheduler.dba.execute('DELETE FROM tentative_list WHERE (message_id = ?)', (interaction.message.id, ))
-            self.scheduler.dba.execute("DELETE FROM schedules_list WHERE message_id = ?", (interaction.message.id, ))
+            self.scheduler.dba.execute('DELETE FROM signups_list WHERE (message_id = ?)', (interaction.message.id,))
+            self.scheduler.dba.execute('DELETE FROM absent_list WHERE (message_id = ?)', (interaction.message.id,))
+            self.scheduler.dba.execute('DELETE FROM tentative_list WHERE (message_id = ?)', (interaction.message.id,))
+            self.scheduler.dba.execute('DELETE FROM schedules_list WHERE (message_id = ?)', (interaction.message.id,))
             self.scheduler.db.commit()
 
             await interaction.message.delete()
@@ -275,4 +315,5 @@ class Scheduler(commands.Cog, name="scheduler"):
 
 async def setup(bot):
     await bot.add_cog(Scheduler(bot))
-
+    # start = Scheduler(bot)
+    # await start.start_time()

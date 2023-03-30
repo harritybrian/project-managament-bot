@@ -1,319 +1,142 @@
-import discord
-from discord import app_commands
-from discord.ext import commands
-import datetime
-import pytz
-import sqlite3
-import re
+# all the imports you could ever want
+from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import Select
 import time
-import schedule
+import datetime
+import requests
+import discord
+import pytz
+from discord.ext import commands, tasks
+from discord.utils import get
+from discord.ext.commands import Bot
+from discord import app_commands
 
 client = discord.Client(intents=discord.Intents.all())
 
-timenow = datetime.datetime.now()
-mst_now = timenow.astimezone(pytz.timezone('America/Denver'))
-my_mst = datetime.datetime.strftime(mst_now, '%Y-%m-%d %I:%M %p')
-timezone = pytz.timezone('America/Denver')
-date_format = mst_now.strftime("%Y/%m/%d")
-hour_format = mst_now.strftime("%H:%M:%S")
 
-
-class Scheduler(commands.Cog, name="scheduler"):
+class Notifier(commands.Cog, name="notifier"):
     def __init__(self, bot):
         self.bot = bot
-        bot.add_view(self.NewView(self))
-        self.check_time.start()
-        print('Scheduler initialized!')
 
-    db = sqlite3.connect("schedules.db")
-    dba = db.cursor()
+    link_prefix = "https://github.com"
 
-    perms = ""
-    signups = []
-    absences = []
-    tentative = []
-    msg_id = ""
 
-    @discord.ext.tasks.loop(minutes=1)
-    async def check_time(self):
-        timenow = datetime.datetime.now()
-        mst_now = timenow.astimezone(pytz.timezone('America/Denver'))
-        my_mst = datetime.datetime.strftime(mst_now, '%Y-%m-%d %I:%M %p')
+    # channel = '1070473541495029800'
 
-        self.dba.execute("SELECT time FROM schedules_list")
-        data = self.dba.fetchall()
-        for x in data:
-            if x[0] < my_mst:
-                self.dba.execute("SELECT message_id FROM schedules_list WHERE time = ?", (x[0],))
-                msg_id = self.dba.fetchone()
-                msg_id = re.sub('\D', '', str(msg_id))
-                msg_id = int(msg_id)
-                print(msg_id)
-                self.dba.execute("SELECT channel_id FROM schedules_list WHERE time = ?", (x[0],))
-                channel_id = self.dba.fetchone()
-                channel_id = re.sub('\D', '', str(channel_id))
-                channel_id = int(channel_id)
-                print(channel_id)
-                channel = self.bot.get_channel(channel_id)
-                msg = await channel.fetch_message(msg_id)
-                view = self.BlankView(self)
-                await msg.edit(view=view)
+    # The on_ready() function will be used to grab the first date.  The notify() function will be used to
+    # periodically check to make sure updates are reported to the client
+    def create_web_driver(self, username, password):
+        # Web Driver Options
+        options = webdriver.ChromeOptions()
+        options.add_argument('headless')  # make sure no window pops up
+        # options.add_experimental_option("detach", True)  ## if you want the browser to stay open, uncomment
 
-                self.dba.execute('DELETE FROM signups_list WHERE (message_id = ?)', (msg_id,))
-                self.dba.execute('DELETE FROM absent_list WHERE (message_id = ?)', (msg_id,))
-                self.dba.execute('DELETE FROM tentative_list WHERE (message_id = ?)',
-                                 (msg_id,))
-                self.dba.execute('DELETE FROM schedules_list WHERE (message_id = ?)',
-                                 (msg_id,))
-                self.db.commit()
-                print('Deleted past event records.')
+        # Initialize Web Driver
+        driver = webdriver.Chrome(options=options)
+        driver.get("https://github.com/login")
 
-    async def get_user(self, id):
-        x = await self.bot.fetch_user(id)
-        x = x.display_name
-        return x
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "login_field")))
+        # find username/email field and send the username itself to the input field
+        driver.find_element("id", "login_field").send_keys(username)
+        # find password input field and insert password as well
+        driver.find_element("id", "password").send_keys(password)
+        # click login button
+        driver.find_element("name", "commit").click()
 
-    async def setup_hook(self) -> None:
-        self.bot.add_view(self.NewView(self))
-
-    async def check_role(self, interaction):
-        if self.perms not in interaction.user.roles:
-            await interaction.response.send_message("You do not have the role. Cannot sign up!", ephemeral=True,
-                                                    delete_after=2)
-            return False
+        # wait for the ready state to be complete
+        WebDriverWait(driver=driver, timeout=10).until(
+            lambda x: x.execute_script("return document.readyState === 'complete'")
+        )
+        error_message = "Incorrect username or password."
+        # get the errors (if there are any)
+        errors = driver.find_elements("css selector", ".flash-error")
+        if any(error_message in e.text for e in errors):
+            print("[!] Login failed")
         else:
-            return True
+            print("[+] Login successful")
 
-    async def swap(self, option, interaction):
-        user_id = interaction.user.id
-        user = interaction.user
-        msg_id = interaction.message.id
+        return driver
 
-        if option == 1:
-            self.dba.execute("SELECT ? FROM signups_list WHERE message_id = ?", (user_id, msg_id))
-            data = self.dba.fetchone()
-        elif option == 2:
-            self.dba.execute("SELECT ? FROM absent_list WHERE message_id = ?", (user_id, msg_id))
-            data = self.dba.fetchone()
-        elif option == 3:
-            self.dba.execute("SELECT ? FROM tentative_list WHERE message_id = ?", (user_id, msg_id))
-            data = self.dba.fetchone()
+    def log_out(self, driver):
+        WebDriverWait(driver=driver, timeout=5)
+        driver.find_element(By.XPATH, '/html/body/div[1]/div[1]/header/div[7]/details/summary').click()
+        WebDriverWait(driver=driver, timeout=100).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, '.dropdown-item.dropdown-signout')))
+        driver.find_element(By.CSS_SELECTOR, '.dropdown-item.dropdown-signout').click()
 
-        if data is not None:
-            return
+    def create_web_hook_github(self, repository_url, username, password):
+        # Create new web driver and log in
+        driver = self.create_web_driver(username, password)
 
-        if option != 1:
-            self.dba.execute('DELETE FROM signups_list WHERE (message_id = ? AND user_id = ?)', (msg_id, user_id))
-        if option != 2:
-            self.dba.execute('DELETE FROM absent_list WHERE (message_id = ? AND user_id = ?)', (msg_id, user_id))
-        if option != 3:
-            self.dba.execute('DELETE FROM tentative_list WHERE (message_id = ? AND user_id = ?)', (msg_id, user_id))
+        web_hook_link = repository_url + '/settings/hooks/new'
 
-        if option == 1:
-            self.dba.execute('INSERT INTO signups_list(message_id, user_id) VALUES(?, ?)', (msg_id, user_id))
-        elif option == 2:
-            self.dba.execute('INSERT INTO absent_list(message_id, user_id) VALUES(?, ?)', (msg_id, user_id))
-        elif option == 3:
-            self.dba.execute('INSERT INTO tentative_list(message_id, user_id) VALUES(?, ?)', (msg_id, user_id))
+        # retrieve GitHub web_hook link and open page
+        driver.get(web_hook_link)
 
-        self.db.commit()
-        return
+        # Wait until web page is loaded before entering data
+        WebDriverWait(driver=driver, timeout=1200).until(EC.presence_of_element_located((By.NAME, "hook[url]")))
 
-    async def update_embed(self, embed: discord.Embed, interaction):
-        msg_id = interaction.message.id
+        # enter Webhook URL into location
+        driver.find_element(By.ID, "hook_url").send_keys(self.web_hook_discord_full)
 
-        dict_embed = embed.to_dict()
-        signups = []
-        absent = []
-        tentative = []
-        self.dba.execute('SELECT user_id FROM signups_list WHERE message_id = ?', (msg_id,))
-        lista = self.dba.fetchall()
-        for a in lista:
-            signups += a
-        self.dba.execute('SELECT user_id FROM absent_list WHERE message_id = ?', (msg_id,))
-        listb = self.dba.fetchall()
-        for b in listb:
-            absent += b
-        self.dba.execute('SELECT user_id FROM tentative_list WHERE message_id = ?', (msg_id,))
-        listc = self.dba.fetchall()
-        for c in listc:
-            tentative += c
+        # auto-fill selector and choose JSON
+        selector = Select(driver.find_element(By.ID, "hook_content_type"))
+        selector.select_by_value("json")
 
-        for field in dict_embed["fields"]:
-            if field["name"] == "✅Signups:":
-                newstr = ""
-                for x in signups:
-                    y = await interaction.guild.fetch_member(x)
-                    newstr += '\n' + str(y.nick)
-                field["value"] = newstr
+        # Select a radio button for all events  -- again, will change once discord commands aren't ugly and disgusting
+        driver.find_element(By.ID, "hook-event-choice-everything").click()
 
-        for field in dict_embed["fields"]:
-            if field["name"] == "❌Absences:":
-                newstr = ""
-                for x in absent:
-                    y = await interaction.guild.fetch_member(x)
-                    newstr += '\n' + str(y.nick)
-                field["value"] = newstr
+        # submit the form and finalize webhook
+        driver.find_element(By.XPATH, '//*[@id="new_hook"]/p[3]/button').click()
 
-        for field in dict_embed["fields"]:
-            if field["name"] == "⚖Tentative:":
-                newstr = ""
-                for x in tentative:
-                    y = await interaction.guild.fetch_member(x)
-                    newstr += '\n' + str(y.nick)
-                field["value"] = newstr
+        WebDriverWait(driver=driver, timeout=1200)
 
-        embed = discord.Embed.from_dict(dict_embed)
-        embed.set_field_at(2, name=f'\U0001F465 Attending: {len(lista)}', value="")
-        return embed
+        # log out of user-profile
+        self.log_out(driver)
 
-    @commands.hybrid_command(name='schedule', with_app_command=True, description="A test scheduler.",
-                             brief="Brief example.", usage="Usage example.")
-    @app_commands.describe(title='Enter a title for the event.', description='Enter a description for the event.',
-                           role='Choose which roles can sign up for the event.',
-                           time='Enter time in the format: Y-M-D H:M AM/PM')
-    async def scheduler(self, ctx, *, time: str = commands.parameter(description="Enter as Y-M-D Hour-Minute-AM/PM"),
-                        title: str = commands.parameter(default="Default title.",
-                                                        description='Title of the event.',
-                                                        displayed_default='Displayed default'),
-                        description: str = commands.parameter(default="Default description.",
-                                                              description="Desc of the event."),
-                        role: discord.Role = None):
+        WebDriverWait(driver=driver, timeout=1200)
 
-        # if role is None:
-        # self.perms = ctx.guild.default_role
-        # else:
-        # self.perms = role
+        # close the driver
+        driver.close()
 
-        if not ctx.message.author.guild_permissions.administrator:
-            await ctx.send(content='You need to be an admin to post signups!', ephemeral=True, delete_after=5)
-            return
+    @commands.hybrid_command(name='notification', with_app_command=True, description="Notification Setup")
+    @app_commands.describe(username='Enter a username',
+                           password='Enter a password',
+                           repository_url='Enter repo url')
+    async def github_setup(self, ctx, username, password, repository_url):
+        await ctx.send(content=f'Setting up your github system...', ephemeral=True, delete_after=5)
+        self.create_web_hook_github(repository_url, username, password)
+        await ctx.send(content=f'Successfully set up your github system!', ephemeral=True, delete_after=5)
 
-        date = datetime.datetime.strptime(time, '%Y-%m-%d %I:%M %p')
-        date1 = timezone.localize(date, is_dst=None)
-        now = mst_now.strftime("%Y-%m-%d %I:%M %p")
+    @commands.hybrid_command(name='create_webhook', with_app_command=True,
+                             description='Create a webhook for the channel.')
+    async def create_channel_webhook(self, ctx):
+        channel = ctx.channel
+        web = await channel.create_webhook(name="GitHub WebHook")
+        web_url = str(web.url) + '/github'
+        await ctx.send(content="Navigate to '<repo url>/settings/hooks/new' and copy the below URL into the Add Webhook field "  +
+                               web_url, ephemeral=True)
 
-        if date1 < mst_now:
-            await ctx.send(content='That time has already passed!', ephemeral=True, delete_after=5)
-            return
+        
 
-        signup = discord.Embed(timestamp=date)
-        view = self.NewView(self)
+    @commands.hybrid_command(name='github_login', with_app_command=True, description='Login to GitHub.')
+    async def github_login(self, ctx, username, password):
+        # await ctx.send(f'You entered: {username} and {password}')
+        test_login = self.create_web_driver(username, password)
 
-        signup.set_author(name=f'Created by {ctx.author.display_name}')
-        signup.title = title
-        signup.description = description
-        signup.set_footer(text="\U0001F916 Bot by C&C")
-        # signup.set_image(url=ctx.message.attachments[0].url)
-        signup.add_field(name=f'\U0001F4C5 ' + date.strftime("%Y-%m-%d"), value="", inline=True)
-        signup.add_field(name=f'\U0000231A ' + date.strftime("%I:%M %p"), value="", inline=True)
-        signup.add_field(name="\U0001F465 Attending:", value=0, inline=True)
-        signup.add_field(name="✅Signups:", value="", inline=True)
-        signup.add_field(name="❌Absences:", value="", inline=True)
-        signup.add_field(name="⚖Tentative:", value="", inline=True)
-        embed = await ctx.send(embed=signup, view=view)
-        self.msg_id = embed.id
-        self.dba.execute('INSERT INTO schedules_list(message_id, time, channel_id) VALUES(?, ?, ?)',
-                         (self.msg_id, date1, ctx.message.channel.id))
-        print('Initial insert')
-        self.db.commit()
-
-        guild = ctx.guild
-        # await discord.Guild.create_scheduled_event(guild, name=title, start_time=date1,
-        #                                           description=description, channel=ctx.guild.voice_channels[0],)
-
-    class BlankView(discord.ui.View):
-        def __init__(self, scheduler):
-            super().__init__(timeout=None)
-            self.scheduler = scheduler
-
-        @discord.ui.button(label="The event has already passed.", style=discord.ButtonStyle.secondary,
-                           custom_id='blank',
-                           disabled=True)
-        async def blank_button(self):
-            return
-
-    class NewView(discord.ui.View):
-        def __init__(self, scheduler):
-            super().__init__(timeout=None)
-            self.scheduler = scheduler
-
-        @discord.ui.button(label="Sign up", row=0, style=discord.ButtonStyle.secondary, custom_id='persistent_view_1',
-                           emoji="✅")
-        async def button_signup(self, interaction: discord.Interaction, button: discord.ui.Button):
-            # if not await self.scheduler.check_role(interaction):
-            # return
-
-            await self.scheduler.swap(1, interaction)
-
-            # self.scheduler.signups.append(interaction.user)
-
-            await interaction.message.edit(embed=await self.scheduler.update_embed(interaction.message.embeds[0],
-                                                                                   interaction))
-            await interaction.response.defer()
-
-        @discord.ui.button(label="Absent", row=0, style=discord.ButtonStyle.secondary, custom_id='persistent_view_2',
-                           emoji="❌")
-        async def button_absent(self, interaction: discord.Interaction, button: discord.ui.Button):
-            # if not await self.scheduler.check_role(interaction):
-            # return
-            await self.scheduler.swap(2, interaction)
-
-            # self.scheduler.absences.append(interaction.user)
-
-            await interaction.message.edit(embed=await self.scheduler.update_embed(interaction.message.embeds[0],
-                                                                                   interaction))
-            await interaction.response.defer()
-
-        @discord.ui.button(label="Tentative", row=0, style=discord.ButtonStyle.secondary, custom_id='persistent_view_3',
-                           emoji="⚖")
-        async def button_tentative(self, interaction: discord.Interaction, button: discord.ui.Button):
-            # if not await self.scheduler.check_role(interaction):
-            # return
-            await self.scheduler.swap(3, interaction)
-
-            # self.scheduler.tentative.append(interaction.user)
-
-            await interaction.message.edit(embed=await self.scheduler.update_embed(interaction.message.embeds[0],
-                                                                                   interaction))
-            await interaction.response.defer()
-
-        @discord.ui.button(label="Remove Sign Up", row=1, style=discord.ButtonStyle.danger,
-                           custom_id='persistent_view_4')
-        async def button_remove(self, interaction: discord.Interaction, button: discord.ui.Button):
-            # if not await self.scheduler.check_role(interaction):
-            # return
-            # self.scheduler.swap(0, interaction.user)
-
-            self.scheduler.dba.execute('DELETE FROM signups_list WHERE (message_id = ? AND user_id = ?)',
-                                       (interaction.message.id, interaction.user.id))
-            self.scheduler.dba.execute('DELETE FROM absent_list WHERE (message_id = ? AND user_id = ?)',
-                                       (interaction.message.id, interaction.user.id))
-            self.scheduler.dba.execute('DELETE FROM tentative_list WHERE (message_id = ? AND user_id = ?)',
-                                       (interaction.message.id, interaction.user.id))
-            self.scheduler.db.commit()
-
-            await interaction.message.edit(embed=await self.scheduler.update_embed(interaction.message.embeds[0],
-                                                                                   interaction))
-            await interaction.response.defer()
-
-        @discord.ui.button(label="Delete Event", row=1, style=discord.ButtonStyle.danger,
-                           custom_id='persistent_view_5')
-        async def button_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
-            if not interaction.message.author.guild_permissions.administrator:
-                return
-
-            self.scheduler.dba.execute('DELETE FROM signups_list WHERE (message_id = ?)', (interaction.message.id,))
-            self.scheduler.dba.execute('DELETE FROM absent_list WHERE (message_id = ?)', (interaction.message.id,))
-            self.scheduler.dba.execute('DELETE FROM tentative_list WHERE (message_id = ?)', (interaction.message.id,))
-            self.scheduler.dba.execute('DELETE FROM schedules_list WHERE (message_id = ?)', (interaction.message.id,))
-            self.scheduler.db.commit()
-
-            await interaction.message.delete()
-            await interaction.response.defer()
+        repos = test_login.find_element("css selector", ".js-repos-container")
+        # wait for the repos container to be loaded
+        WebDriverWait(driver=test_login, timeout=10).until((lambda x: repos.text != "Loading..."))
+        # iterate over the repos and print their names
+        await ctx.send("Here are a list of your repositories:")
+        for repo in repos.find_elements("css selector", "li.private"):  # you can use "li.private" for private repos
+            await ctx.send(repo.find_element("css selector", "a").get_attribute("href"))
+        test_login.close()
 
 
 async def setup(bot):
-    await bot.add_cog(Scheduler(bot))
-    # start = Scheduler(bot)
-    # await start.start_time()
+    await bot.add_cog(Notifier(bot))

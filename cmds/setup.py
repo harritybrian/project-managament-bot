@@ -3,6 +3,8 @@ from discord import app_commands
 from discord.utils import get
 from discord.ext import commands
 from discord.ui import Select, View
+import TicketSystem
+
 
 client = discord.Client(intents = discord.Intents.all())
 
@@ -162,8 +164,6 @@ class connectionsSelect(Select):
 
     async def callback(self, interaction):
 
-        # Array to hold the channnels that were added during setup
-        channelsAdded = []
         await interaction.response.send_message('Beginning your server setup!', ephemeral = True)
         
         # Delete all initial categories, then delete the remaining channels if the server is new
@@ -177,13 +177,14 @@ class connectionsSelect(Select):
             match feature:
                 case '1': # Ticket feature is requested
                     ticket = await interaction.guild.create_category(name = 'Tickets', position = 2, reason = 'New ticketing channel')
-                    channelsAdded.append(ticket)
-                    await ticket.create_text_channel(name = 'Submit-a-ticket')
+                    ticket_channel = await ticket.create_text_channel(name = 'Submit-a-ticket')
+                    embed = discord.Embed(title = "If you need support, click the button below to create a new ticket!",
+                        color = discord.Colour.dark_teal())
+                    await ticket_channel.send(embed = embed, view = TicketSystem.ticket_launcher())
 
                 case '2': # Notification feature is requested
                     # Create the cataegories for the notification system
                     updates = await interaction.guild.create_category(name='Updates', position = 0, reason = 'New update channel')
-                    channelsAdded.append(updates)
                     tracker = await interaction.guild.create_category(name = 'Schedule/Calendar', position = 1, reason = 'New tracking channel')
                     # Create the text channels for the notifications system
                     await tracker.create_text_channel(name = 'Team-member-scheduler')
@@ -199,10 +200,11 @@ class connectionsSelect(Select):
             voice = await interaction.guild.create_category(name = 'Voice Channels', position = 3, reason = 'New Voice Channels')
             for i in range(1, 4):
                 await voice.create_voice_channel(name = 'Voice ' + str(i))
-            general = await channelsAdded[0].create_text_channel(name = 'General')
-            await general.send('Your server is now setup!')
+            discuss = await interaction.guild.create_category(name = 'Discussion', position = 0)
+            general = await discuss.create_text_channel(name = 'General')
+            await general.send('Your server is now setup!', delete_after = 10)
         else:
-            await interaction.channel.send('Your server is now setup!')
+            await interaction.channel.send('Your server is now setup!', delete_after = 10)
 
 
 class Setup(commands.Cog, name = "setup"):
@@ -220,9 +222,9 @@ class Setup(commands.Cog, name = "setup"):
         await ctx.send("Please select your server's state!", view=state_view, ephemeral = True)
 
     @setup.error
-    async def setup_error(ctx, error):
+    async def setup_error(cog, ctx, error):
         """Permissions fail response"""
-        if isinstance(error, commands.CheckFailure):
+        if isinstance(error, commands.MissingPermissions):
             msg = f"{ctx.message.author.mention}, You lack the required permissions for this command."
             await ctx.send(msg)
 

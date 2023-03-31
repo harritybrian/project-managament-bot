@@ -30,7 +30,7 @@ class Scheduler(commands.Cog, name="scheduler"):
 
     # Checks the current time every minute, and compares it to existing schedules.
     # If the schedules are past the current time, their buttons are disabled and their data removed from the database.
-    @discord.ext.tasks.loop(minutes=1)
+    @discord.ext.tasks.loop(seconds=15)
     async def check_time(self):
         print('Checking time.')
         # Gets the current time every time the code is run, and converts it to same format as the schedules time.
@@ -44,9 +44,6 @@ class Scheduler(commands.Cog, name="scheduler"):
 
         # Looping through the times of every schedule stored.
         for x in data:
-            print(my_mst)
-            print(x[0])
-
             # Checks if the schedules time is before or equal to the current time. Proceeds if true.
             if x[0] <= my_mst:
                 print('Event has passed! Removing...')
@@ -177,7 +174,7 @@ class Scheduler(commands.Cog, name="scheduler"):
 
         # Same as the above loop, but for tentatives instead of absences.
         for field in dict_embed["fields"]:
-            if field["name"] == "⚖Tentative:":
+            if field["name"] == "⚖️Tentative:":
                 newstr = ""
                 for x in tentative:
                     y = await interaction.guild.fetch_member(x)
@@ -266,7 +263,7 @@ class Scheduler(commands.Cog, name="scheduler"):
         signup.add_field(name="\U0001F465 Attending:", value=0, inline=True)
         signup.add_field(name="✅Signups:", value="", inline=True)
         signup.add_field(name="❌Absences:", value="", inline=True)
-        signup.add_field(name="⚖Tentative:", value="", inline=True)
+        signup.add_field(name="⚖️Tentative:", value="", inline=True)
 
         # Checks for any incorrect inputs when attempting to make the embed.
         try:
@@ -365,7 +362,7 @@ class Scheduler(commands.Cog, name="scheduler"):
         # Remove schedule button. Allows admin to delete a schedule, and removes all its related info from the database.
         @discord.ui.button(label="Delete Event", row=1, style=discord.ButtonStyle.danger,
                            custom_id='persistent_view_5')
-        async def button_delete(self, interaction: discord.Interaction):
+        async def button_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
             # Checks that the user is an admin of the server.
             if not interaction.message.author.guild_permissions.administrator:
                 return

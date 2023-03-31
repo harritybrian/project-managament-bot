@@ -30,7 +30,7 @@ class Scheduler(commands.Cog, name="scheduler"):
 
     # Checks the current time every minute, and compares it to existing schedules.
     # If the schedules are past the current time, their buttons are disabled and their data removed from the database.
-    @discord.ext.tasks.loop(seconds=15)
+    @discord.ext.tasks.loop(minutes=1)
     async def check_time(self):
         print('Checking time.')
         # Gets the current time every time the code is run, and converts it to same format as the schedules time.
@@ -90,17 +90,18 @@ class Scheduler(commands.Cog, name="scheduler"):
 
         # Checks if the user is already on the signup they chose. Returns if found.
         if option == 1:
-            self.dba.execute("SELECT ? FROM signups_list WHERE message_id = ?", (user_id, msg_id))
-            data = self.dba.fetchone()
+            self.dba.execute("SELECT user_id FROM signups_list WHERE message_id = ?", (msg_id,))
+            data = self.dba.fetchall()
         elif option == 2:
-            self.dba.execute("SELECT ? FROM absent_list WHERE message_id = ?", (user_id, msg_id))
-            data = self.dba.fetchone()
+            self.dba.execute("SELECT user_id FROM absent_list WHERE message_id = ?", (msg_id,))
+            data = self.dba.fetchall()
         elif option == 3:
-            self.dba.execute("SELECT ? FROM tentative_list WHERE message_id = ?", (user_id, msg_id))
-            data = self.dba.fetchone()
+            self.dba.execute("SELECT user_id FROM tentative_list WHERE message_id = ?", (msg_id,))
+            data = self.dba.fetchall()
 
-        if data is not None:
-            return
+        for x in data:
+            if x[0] == user_id:
+                return
 
         # If the user is not already on their signup list, it deletes them from the other 2 lists they did not choose.
         # This is to ensure they do not exist on two lists at once: for example, signed up and absent at the same time.
@@ -309,6 +310,8 @@ class Scheduler(commands.Cog, name="scheduler"):
         @discord.ui.button(label="Sign up", row=0, style=discord.ButtonStyle.secondary, custom_id='persistent_view_1',
                            emoji="✅")
         async def button_signup(self, interaction: discord.Interaction, button: discord.ui.Button):
+            # Defers the response, since none is needed.
+            await interaction.response.defer()
 
             # Runs the swap command to add the user to their list, if possible.
             await self.scheduler.swap(1, interaction)
@@ -317,28 +320,28 @@ class Scheduler(commands.Cog, name="scheduler"):
             await interaction.message.edit(embed=await self.scheduler.update_embed(interaction.message.embeds[0],
                                                                                    interaction))
 
-            # Defers the response, since none is needed.
-            await interaction.response.defer()
-
         # Same as signup button, but for absences.
         @discord.ui.button(label="Absent", row=0, style=discord.ButtonStyle.secondary, custom_id='persistent_view_2',
                            emoji="❌")
         async def button_absent(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await interaction.response.defer()
+
             await self.scheduler.swap(2, interaction)
 
             await interaction.message.edit(embed=await self.scheduler.update_embed(interaction.message.embeds[0],
                                                                                    interaction))
-            await interaction.response.defer()
+
 
         # Same as signup button, but for tentatives.
         @discord.ui.button(label="Tentative", row=0, style=discord.ButtonStyle.secondary, custom_id='persistent_view_3',
                            emoji="⚖")
         async def button_tentative(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await interaction.response.defer()
+
             await self.scheduler.swap(3, interaction)
 
             await interaction.message.edit(embed=await self.scheduler.update_embed(interaction.message.embeds[0],
                                                                                    interaction))
-            await interaction.response.defer()
 
         # Remove signup button. This button removes the users signup from any and all lists.
         @discord.ui.button(label="Remove Sign Up", row=1, style=discord.ButtonStyle.danger,

@@ -205,6 +205,7 @@ class Scheduler(commands.Cog, name="scheduler"):
                            time='Enter time in the format: Y-M-D H:M AM/PM',
                            image='Enter an image URL for the event.',
                            thumbnail='Enter a image URL for the thumbnail.')
+    @commands.has_permissions(administrator = True) # Checks if the user typing the command is an administrator - only admins can create schedules.
     async def scheduler(self, ctx, *, time: str = commands.parameter(description="Enter as Y-M-D Hour-Minute-AM/PM"),
                         title: str = commands.parameter(default="Default title.",
                                                         description='Title of the event.',
@@ -216,10 +217,6 @@ class Scheduler(commands.Cog, name="scheduler"):
                         thumbnail: str = commands.parameter
                             (default=None, description="Thumbnail image for the event")):
 
-        # Checks if the user typing the command is an administrator - only admins can create schedules.
-        if not ctx.message.author.guild_permissions.administrator:
-            await ctx.send(content='You need to be an admin to post signups!', ephemeral=True, delete_after=5)
-            return
 
         # Formats the inputted date and time into a datetime objects, and localizes it.
         try:
@@ -285,6 +282,14 @@ class Scheduler(commands.Cog, name="scheduler"):
         await discord.Guild.create_scheduled_event(ctx.guild, name=title, start_time=date1,
         description=description, channel=ctx.guild.voice_channels[0], )
 
+    @scheduler.error
+    async def scheduler_error(cog, ctx, error):
+        """Permissions fail response"""
+        if isinstance(error, commands.MissingPermissions):
+            msg = f"{ctx.message.author.mention} You lack the required permissions for this command"
+            await ctx.send(msg)
+
+    
     # This view creates the disabled button stating the event has passed.
     class BlankView(discord.ui.View):
         def __init__(self, scheduler):
@@ -367,7 +372,10 @@ class Scheduler(commands.Cog, name="scheduler"):
                            custom_id='persistent_view_5')
         async def button_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
             # Checks that the user is an admin of the server.
-            if not interaction.message.author.guild_permissions.administrator:
+            await interaction.response.defer()
+            print('TESTING')
+            if not interaction.user.guild_permissions.administrator:
+                print('TESTING PART 2')
                 return
 
             print('User deleted event, removing records....')
@@ -384,7 +392,6 @@ class Scheduler(commands.Cog, name="scheduler"):
 
             # Deletes the actual message itself once the database is updated.
             await interaction.message.delete()
-            await interaction.response.defer()
 
 
 # Discord Cog setup. Enables the schedule for use from the main file.

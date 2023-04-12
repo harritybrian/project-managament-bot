@@ -6,7 +6,7 @@ import os
 import pathlib
 from discord import app_commands
 from discord.ext import commands, tasks
-from discord.utils import get
+from discord.utils import get, find
 from discord.ext.commands import Bot
 from TicketSystem import ticket_control, ticket_launcher
 
@@ -58,5 +58,11 @@ async def help(interaction: discord.Interaction):
       description = "No description found/provided"
     embed.add_field(name=f"`/{command.name}`", value=description)
   await interaction.response.send_message(embed=embed)
+
+@bot.event
+async def on_guild_join(guild):
+  general = find(lambda x: x.name == 'general', guild.text_channels)
+  if general and general.permissions_for(guild.me).send_messages:
+    await general.send('Hello {}! Use /help for a list of commands!'.format(guild.name))
 
 bot.run(TOKEN)

@@ -43,7 +43,9 @@ class webhookOption(Select):
                         web_url, ephemeral=True)
         if self.values[0] == "Google Drive":
             channel = interaction.channel
-            web = await channel.create_webook(name="Drive Webhook")
+            await interaction.response.send_message(
+                content="We are still working on Google Drive Integrations.  Check back with us shortly." +
+                        web_url, ephemeral=True)
 
 
 class Notifier(commands.Cog, name="notifier"):
@@ -159,7 +161,7 @@ class Notifier(commands.Cog, name="notifier"):
         # close the driver
         driver.close()
 
-    @commands.hybrid_command(name='github', with_app_command=True, description="Notification Setup")
+    @commands.hybrid_command(name='github', with_app_command=True, description="GitHub Notification System Setup.  Note: You must be the repository owner")
     @app_commands.describe(username='Enter a username',
                            password='Enter a password',
                            repository_url='Enter repo url',

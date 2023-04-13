@@ -68,5 +68,3 @@ class ticket_control(discord.ui.View):
   async def close(self, interaction, button):
     embed = discord.Embed(title = "Are you sure you want to close this ticket?", color = discord.Colour.brand_red())
     await interaction.response.send_message(embed = embed, view = confirm(), ephemeral = True)
-
-#------------------------------------------------------------------------------------------------------#

@@ -32,7 +32,6 @@ class Scheduler(commands.Cog, name="scheduler"):
     # If the schedules are past the current time, their buttons are disabled and their data removed from the database.
     @discord.ext.tasks.loop(minutes=1)
     async def check_time(self):
-        print('Checking time.')
         # Gets the current time every time the code is run, and converts it to same format as the schedules time.
         time_now = datetime.datetime.now()
         mst_now = time_now.astimezone(timezone)

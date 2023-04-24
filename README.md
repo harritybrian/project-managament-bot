@@ -8,6 +8,9 @@
 
 Create a brand-new server or add to your existing server.  Add any available features to your server with a guided process that allows you to click through connections, scheduler setups, ticket systems etc. 
 
+![image](https://user-images.githubusercontent.com/91294189/234134147-2eea3efa-464c-4049-99aa-16b66ac072d0.png)
+
+
 ## Scheduler 
 
 A robust tool to organize meetings amongst your group-members or team.  Keep track of members that have signed up, absent members, scheduled date of a meeting, and more. 
@@ -19,11 +22,16 @@ A robust tool to organize meetings amongst your group-members or team.  Keep tra
 
 A notification system that allows you to connect to available connections.  Currently supports full integration with GitHub.  Allows customization of ‘type’ of notifications (which determines quantity) that get delivered straight to a Discord channel. 
 
+![image](https://user-images.githubusercontent.com/91294189/234134189-124f964c-8f80-4355-bddf-6cd93a05c884.png)
+
+
 ## Ticket System 
 
 A broad tool to address anything within a project.  Primarily used as a technical tool, you can create a ticket to receive support—whether that’s with technical difficulties, project difficulties, conflicts etc. 
 
- 
+![image](https://user-images.githubusercontent.com/91294189/234134232-02ffa655-f5a3-44c6-9fa4-2eca7b6cb5ce.png)
+
+
 
 # How To 
 

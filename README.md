@@ -2,6 +2,12 @@
 
 ![image](https://user-images.githubusercontent.com/91294189/231611798-07eb5ecc-3bb9-4781-a8d1-237e861c6525.png)
 
+# Installation
+
+[Click here to invite the bot to your discord server!](https://discord.com/api/oauth2/authorize?client_id=1071279712543985754&permissions=19236018191440&scope=bot)
+
+Afterwards just run through the setup command on your discord server to get everything up and running!
+
 # Key Features 
 
 ## Setup 

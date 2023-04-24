@@ -12,6 +12,9 @@ Create a brand-new server or add to your existing server.  Add any available fea
 
 A robust tool to organize meetings amongst your group-members or team.  Keep track of members that have signed up, absent members, scheduled date of a meeting, and more. 
 
+![image](https://user-images.githubusercontent.com/91294189/234134076-40fa3fcd-904e-4279-9594-d9f91d575c44.png)
+
+
 ## Notifier 
 
 A notification system that allows you to connect to available connections.  Currently supports full integration with GitHub.  Allows customization of ‘type’ of notifications (which determines quantity) that get delivered straight to a Discord channel. 
